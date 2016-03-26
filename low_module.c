@@ -12,12 +12,12 @@ char module_header[] = "low_module: ";
 long trg_ip[] = {192, 168, 56, 101};
 long trg_port = 13334;
 
-char new_char = 'F';
-char trg_msg[] = {'d', 'd', 'd', 'd', 'd', '\n'};
-unsigned int trg_msg_len = 6;
+unsigned char new_char = 'F';
+unsigned char trg_msg[] = {'d', 'd', 'd', 'd', '\n'};
+unsigned int trg_msg_len = 5;
 
 
-bool check_pl(char *pl, unsigned int pl_len) {
+bool check_pl(unsigned char *pl, unsigned int pl_len) {
     if (pl_len != trg_msg_len)
         return false;
 
@@ -27,6 +27,15 @@ bool check_pl(char *pl, unsigned int pl_len) {
             return false;
 
     return true;
+}
+
+
+void fill_pl(unsigned char *pl, unsigned int pl_len) {
+    int i;
+
+    for (i = 0; i < pl_len; ++i) {
+        pl[i] = new_char;
+    }
 }
 
 
@@ -59,7 +68,7 @@ void print_pkt(struct sk_buff *skb) {
         );
 
     for (i = 0 ; i < skb->len - ip_hdrlen(skb) - tcp_hdrlen(skb); ++i) {
-        printk("%02x", *(pl + i));
+        printk("%x", *(pl + i));
     }
 }
 
@@ -84,74 +93,42 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
             unsigned char *pl = (unsigned char *)(
                         skb->data + ip_hdrlen(skb) + tcp_hdrlen(skb)
                     );
-            if (pl_len >= 2) {
-            // if (check_pl(pl, pl_len)) {
+            if (check_pl(pl, pl_len)) {
                 printk("%sBefore. ", module_header);
-
-                struct tcphdr *tcph = tcp_hdr(skb);
-                // printk("IP csum: 0x%x. ", (unsigned int)ntohs(iph->check));
-                // printk("TCP csum: 0x%x. ", (unsigned int)ntohs(tcph->check));
-
-                // print_chars(pl, pl_len);
-
                 print_pkt(skb);
-
-                // printk(" Skb->len: %d, IP tot len: %d; ", skb->len, ntohs(iph->tot_len));
-
                 printk("\n");
 
-                // unsigned int d = pl_len / 2;
-                // int i;
-                // for (i = 0; i < d; ++i) {
-                //     pl[i] = new_char;
-                // }
-                unsigned int d = 2;
-                unsigned short *tmp = pl;
-                *tmp = tcph->check;
+
+                unsigned int d = pl_len / 2;
 
 
-                // skb_trim(skb, skb->len - (pl_len - d));
-                // iph->tot_len = htons(ntohs(iph->tot_len) - (pl_len - d));
-                // pl_len = d;
                 skb_trim(skb, ip_hdrlen(skb) + tcp_hdrlen(skb) + d);
-                tcph = tcp_hdr(skb);
+                struct tcphdr *tcph = tcp_hdr(skb);
                 iph = ip_hdr(skb);
+                pl = (unsigned char *)(
+                        skb->data + ip_hdrlen(skb) + tcp_hdrlen(skb)
+                    );
+
                 iph->tot_len = htons((unsigned short)skb->len);
                 pl_len = d;
-
-
-                printk("%sAfter trim. ", module_header);
-                // print_chars(pl. pl_len);
-                // printk(" ");
+                fill_pl(pl, pl_len);
 
 
                 tcph->check = htons(0);
-                // int len = skb->len - skb_transport_offset(skb);
-                // tcph->check = tcp_v4_check(len, iph->saddr, iph->daddr,
-                //                            csum_partial((char*)tcph, len, 0));
-                tcph->check = tcp_v4_check(skb->len - 4 * iph->ihl, iph->saddr,
-                                           iph->daddr,
-                                           csum_partial((char*)tcph,
-                                                        skb->len - 4 * iph->ihl,
-                                                        0));
-                // uint32_t csum = skb_checksum(skb, skb_transport_offset(skb), len, 0);
-                // tcph->check = csum_tcpudp_magic(iph->saddr, iph->daddr, len,
-                //                              iph->protocol, csum);
+                int len = skb->len - ip_hdrlen(skb);
+                tcph->check = tcp_v4_check(len, iph->saddr, iph->daddr,
+                                           csum_partial((char*)tcph, len, 0));
 
                 iph->check = htons(0);
                 iph->check = ip_fast_csum((unsigned char *)iph, iph->ihl);
 
-                // printk("IP csum: 0x%x. ", (unsigned int)ntohs(iph->check));
-                // printk("TCP csum: 0x%x. ", (unsigned int)ntohs(tcph->check));
 
-
+                printk("%sAfter trim. ", module_header);
                 print_pkt(skb);
-
                 printk("\n");
             }
         }
     }
-
 
     return NF_ACCEPT;
 }
