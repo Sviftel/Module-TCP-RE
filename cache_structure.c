@@ -8,6 +8,8 @@
 #define MOD 65287
 
 
+// TODO: add fields to join structures
+// TOD: add timestamp fields
 struct rbtree_entry {
     int cnt;
     struct hpl_entry data;
@@ -152,6 +154,7 @@ void add_to_cache(struct cache *c, unsigned char *pl, int s) {
     new_ht_entry = kmalloc(sizeof(struct ht_entry), GFP_KERNEL);
     new_ht_entry->rb_entry = new_rb_entry;
     INIT_HLIST_NODE(&(new_ht_entry->node));
+    // TODO: think about &(c->ht[0]) to do similar with &(c->tree)
     hash_add(c->ht, &(new_ht_entry->node), k);
 
     c->curr_size += s;
@@ -196,9 +199,9 @@ void clean_cache(struct cache *c) {
     c->curr_size = 0;
 }
 
-// TODO: test the function
+
 void get_pl_info(struct cache *c, unsigned char *hash_val,
-                 unsigned char *pl, int *pl_s)
+                 unsigned char **pl, int *pl_s)
 {
     int k = __get_key_from_hash(hash_val);
 
@@ -214,7 +217,7 @@ void get_pl_info(struct cache *c, unsigned char *hash_val,
             __tree_insert(&(c->tree), curr_rb_entry);
             c->hits++;
 
-            pl = curr_rb_entry->data.pl;
+            *pl = curr_rb_entry->data.pl;
             *pl_s = curr_rb_entry->data.size;
             return;
         }

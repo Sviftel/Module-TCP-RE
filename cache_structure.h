@@ -25,17 +25,11 @@ void clean_cache(struct cache *c);
 
 void add_to_cache(struct cache *c, unsigned char *pl, int s);
 
-// TODO: test the function
-// void get_pl_info(struct cache *c, unsigned char *hash_val,
-//                  unsigned char *pl, int *pl_s);
+
+void get_pl_info(struct cache *c, unsigned char *hash_val,
+                 unsigned char **pl, int *pl_s);
 
 int get_hitrate(struct cache *c);
-
-
-/******/
-void __get_hash_key_to_buff(unsigned char *pl, int s,
-                        unsigned char *hash, unsigned int *key);
-/******/
 
 
 #endif

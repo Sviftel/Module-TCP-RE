@@ -84,7 +84,7 @@ int init_func(void) {
 
     c = kmalloc(sizeof(struct cache), GFP_KERNEL);
     init_cache(c, 256);
-    int i, j, entries_num = 3, msg_len = 1;
+    int i, j, entries_num = 3, msg_len = 5;
 
     alloc_hash_structs();
 
@@ -100,26 +100,23 @@ int init_func(void) {
         }
     }
 
-    // printk("%sTest getting payload from cache:\n", module_header);
-    // unsigned char *h[entries_num];
-    // h[0] = "\x4a\x8a\x8\xf0\x9d\x37\xb7\x37\x95\x64\x90\x38\x40\x8b\x5f\x33";
-    // h[1] = "\x92\xeb\x5f\xfe\xe6\xae\x2f\xec\x3a\xd7\x1c\x77\x75\x31\x57\x8f";
-    // h[2] = "\xc\xc1\x75\xb9\xc0\xf1\xb6\xa8\x31\xc3\x99\xe2\x69\x77\x26\x61";
-    // for (i = 0; i < entries_num; ++i) {
-    //     printk("%sNext payload:", module_header);
-    //     unsigned char *pl;
-    //     int s, _k;
-    //     // calc_hash(words[i], msg_len, h);
-    //     // __get_hash_key_to_buff(words[i], msg_len, h, &_k);
+    printk("%sTest getting payload from cache:\n", module_header);
+    for (i = 0; i < entries_num; ++i) {
+        printk("%sNext payload: ", module_header);
+        unsigned char *pl, h[HASH_LEN];
+        int s, _k;
 
-    //     // get_pl_info(c, h[i], pl, &s);
-    //     // for (j = 0; j < s; ++j) {
-    //     //     printk("%c", pl[j]);
-    //     // }
-    // }
+        calc_hash(words[i], msg_len, h);
+        get_pl_info(c, h, &pl, &s);
+
+        for (j = 0; j < s; ++j) {
+            printk("%c", pl[j]);
+        }
+        printk("\n");
+    }
 
 
-    printk("%sPrint from tree:\n", module_header);
+    // printk("%sPrint from tree:\n", module_header);
     tree_print(&(c->tree));
 
     // printk("%sPrint from hash table:\n", module_header);
@@ -134,14 +131,8 @@ int init_func(void) {
 
 void exit_func(void) {
     clean_cache(c);
-
-    printk("%sAfter clean:\n", module_header);
-    printk("%sPrint from tree:\n", module_header);
-    tree_print(&(c->tree));
-    printk("%sPrint from hash table:\n", module_header);
-    cache_ht_print(c);
-
     kfree(c);
+
     free_hash_structs();
     printk("%sStop working with cache\n", module_header);
 }
