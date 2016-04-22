@@ -18,7 +18,7 @@ clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 
 deploy: all
-	cp $(hi_m_name).ko ~/sshfsdir/
+	cp $(lo_m_name).ko ~/sshfsdir/
 
 cache_test:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
