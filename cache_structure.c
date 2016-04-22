@@ -1,5 +1,4 @@
 #include "cache_structure.h"
-#include "hpl_entry.h"
 #include <linux/slab.h>
 
 // 251 = 2^8 - 5
@@ -9,7 +8,7 @@
 
 
 // TODO: add fields to join structures
-// TOD: add timestamp fields
+// TODO: add timestamp fields
 struct rbtree_entry {
     int cnt;
     struct hpl_entry data;
@@ -114,7 +113,7 @@ void __remove_entry_from_cache(struct cache *c) {
 }
 
 // TODO: add lists to solve collisions
-void add_to_cache(struct cache *c, unsigned char *pl, int s) {
+unsigned char *add_to_cache(struct cache *c, unsigned char *pl, int s) {
     struct hpl_entry new_hpl_entry;
     unsigned int k;
 
@@ -135,7 +134,7 @@ void add_to_cache(struct cache *c, unsigned char *pl, int s) {
             __tree_remove(&(c->tree), curr_rb_entry);
             __tree_insert(&(c->tree), curr_rb_entry);
             c->hits++;
-            return;
+            return curr_rb_entry->data.hash;
         }
     }
 
@@ -159,6 +158,8 @@ void add_to_cache(struct cache *c, unsigned char *pl, int s) {
 
     c->curr_size += s;
     c->misses++;
+
+    return NULL;
 }
 
 

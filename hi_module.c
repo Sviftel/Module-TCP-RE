@@ -3,63 +3,39 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/skbuff.h>
-#include <net/ip.h>
 #include <net/tcp.h>
+#include <net/ip.h>
+
+#include "cache_structure.h"
+#include "tcp_processing.h"
+
+MODULE_LICENSE("GPL");
 
 
 struct nf_hook_ops bundle;
-char module_header[] = "low_module: ";
+char module_header[] = "hi_module: ";
 long trg_ip[] = {192, 168, 56, 101};
 long trg_port = 13334;
 
-unsigned char new_char = 'F';
-unsigned char trg_msg[] = {'d', 'd', 'd', 'd', '\n'};
-unsigned int trg_msg_len = 5;
+
+struct cache *c;
 
 
-bool check_pl(unsigned char *pl, unsigned int pl_len) {
-    if (pl_len != trg_msg_len)
-        return false;
-
-    unsigned int i;
-    for (i = 0; i < pl_len; ++i)
-        if (pl[i] != trg_msg[i])
-            return false;
-
-    return true;
+void fill_pl(unsigned char *pl, const unsigned char *hash_val) {
+    memcpy(pl, hash_val, HASH_LEN);
 }
 
 
-void fill_pl(unsigned char *pl, unsigned int pl_len) {
+
+void print_pkt(const struct sk_buff *skb) {
     int i;
 
-    for (i = 0; i < pl_len; ++i) {
-        pl[i] = new_char;
-    }
-}
-
-
-void print_chars(unsigned char *buf, int buf_len) {
-    int i;
-    unsigned char curr_char;
-
-    for (i = 0; i < buf_len; i++) {
-        curr_char = buf[i];
-        if (curr_char >= 'A' && curr_char <= 'Z' ||
-            curr_char >= 'a' && curr_char <= 'z')
-            printk("%c", curr_char);
-        else 
-            printk("!");
-    }
-}
-
-
-void print_pkt(struct sk_buff *skb) {
-    int i;
-
-    printk("Packet: ");
-    for (i = 0 ; i < skb->len; ++i) {
-        printk("%x", *(skb->data + i));
+    printk("TCP segment: ");
+    unsigned char *tcp_d = (unsigned char *)(
+            skb->data + ip_hdrlen(skb)
+        );
+    for (i = 0 ; i < tcp_hdrlen(skb); ++i) {
+        printk("%x", *(tcp_d + i));
     }
 
     printk(" Payload: ");
@@ -71,6 +47,7 @@ void print_pkt(struct sk_buff *skb) {
         printk("%x", *(pl + i));
     }
 }
+
 
 
 unsigned int hook_func(const struct nf_hook_ops *ops,
@@ -93,27 +70,45 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
             unsigned char *pl = (unsigned char *)(
                         skb->data + ip_hdrlen(skb) + tcp_hdrlen(skb)
                     );
-            if (check_pl(pl, pl_len)) {
-                printk("%sBefore. ", module_header);
-                print_pkt(skb);
-                printk("\n");
+
+            printk("%sBefore. ", module_header);
+            print_pkt(skb);
+            printk("\n");
+
+            if (pl_len > HASH_LEN) {
+                unsigned char *hash_val = add_to_cache(c, pl, pl_len);
+
+                if (hash_val != NULL) {
+                    unsigned int d = HASH_LEN;
+                    skb_trim(skb, ip_hdrlen(skb) + tcp_hdrlen(skb) + d);
+                    struct tcphdr *tcph = tcp_hdr(skb);
+                    iph = ip_hdr(skb);
+                    pl = (unsigned char *)(
+                            skb->data + ip_hdrlen(skb) + tcp_hdrlen(skb)
+                        );
+
+                    iph->tot_len = htons((unsigned short)skb->len);
+                    pl_len = d;
+                    fill_pl(pl, hash_val);
+                    adjust_tcp_res_bits(tcp_hdr(skb), IS_HASHED);
 
 
-                unsigned int d = pl_len / 2;
+                    tcph->check = htons(0);
+                    int len = skb->len - ip_hdrlen(skb);
+                    tcph->check = tcp_v4_check(len, iph->saddr, iph->daddr,
+                                               csum_partial((char*)tcph, len, 0));
 
+                    iph->check = htons(0);
+                    iph->check = ip_fast_csum((unsigned char *)iph, iph->ihl);
 
-                skb_trim(skb, ip_hdrlen(skb) + tcp_hdrlen(skb) + d);
+                    printk("%sAfter hashing. ", module_header);
+                    print_pkt(skb);
+                    printk("\n");
+                }
+            } else if (pl_len == HASH_LEN) {
+                adjust_tcp_res_bits(tcp_hdr(skb), NOT_HASHED);
+
                 struct tcphdr *tcph = tcp_hdr(skb);
-                iph = ip_hdr(skb);
-                pl = (unsigned char *)(
-                        skb->data + ip_hdrlen(skb) + tcp_hdrlen(skb)
-                    );
-
-                iph->tot_len = htons((unsigned short)skb->len);
-                pl_len = d;
-                fill_pl(pl, pl_len);
-
-
                 tcph->check = htons(0);
                 int len = skb->len - ip_hdrlen(skb);
                 tcph->check = tcp_v4_check(len, iph->saddr, iph->daddr,
@@ -122,8 +117,7 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
                 iph->check = htons(0);
                 iph->check = ip_fast_csum((unsigned char *)iph, iph->ihl);
 
-
-                printk("%sAfter trim. ", module_header);
+                printk("%sAfter changing flags. ", module_header);
                 print_pkt(skb);
                 printk("\n");
             }
@@ -136,6 +130,10 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
 
 int init_func(void) {
     printk("%sStart initializing new hook\n", module_header);
+
+    alloc_hash_structs();
+    c = kmalloc(sizeof(struct cache), GFP_KERNEL);
+    init_cache(c, 256);
 
     bundle.hook = hook_func;
     bundle.owner = THIS_MODULE;
@@ -150,6 +148,10 @@ int init_func(void) {
 
 
 void exit_func(void) {
+    clean_cache(c);
+    kfree(c);
+    free_hash_structs();
+
     nf_unregister_hook(&bundle);
     printk("%sEnd of working with hook_func\n", module_header);
 }

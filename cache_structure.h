@@ -2,8 +2,10 @@
 #define CACHE_STRUCTURE_H
 
 
+#include "hpl_entry.h"
 #include <linux/hashtable.h>
 #include <linux/rbtree.h>
+
 
 // don't forget to change __get_key_from_hash
 // function if you are changing size of hash_table
@@ -23,9 +25,10 @@ struct cache {
 void init_cache(struct cache *c, int cache_size);
 void clean_cache(struct cache *c);
 
-void add_to_cache(struct cache *c, unsigned char *pl, int s);
+// function returns pointer to array with hash value
+unsigned char *add_to_cache(struct cache *c, unsigned char *pl, int s);
 
-
+// function updates freq key of the payload
 void get_pl_info(struct cache *c, unsigned char *hash_val,
                  unsigned char **pl, int *pl_s);
 
