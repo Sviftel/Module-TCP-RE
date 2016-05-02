@@ -13,33 +13,33 @@ MODULE_LICENSE("GPL");
 
 struct nf_hook_ops bundle;
 char module_header[] = "low_module: ";
-long trg_ip[] = {192, 168, 56, 1};
-long trg_port = 13334;
+// long trg_ip[] = {192, 168, 56, 1};
+// long trg_port = 13334;
 
 
 struct cache *c;
 
 
-void print_pkt(const struct sk_buff *skb) {
-    int i;
+// void print_pkt(const struct sk_buff *skb) {
+//     int i;
 
-    printk("TCP segment: ");
-    unsigned char *tcp_d = (unsigned char *)(
-            skb->data + ip_hdrlen(skb)
-        );
-    for (i = 0 ; i < tcp_hdrlen(skb); ++i) {
-        printk("%x", *(tcp_d + i));
-    }
+//     printk("TCP segment: ");
+//     unsigned char *tcp_d = (unsigned char *)(
+//             skb->data + ip_hdrlen(skb)
+//         );
+//     for (i = 0 ; i < tcp_hdrlen(skb); ++i) {
+//         printk("%x", *(tcp_d + i));
+//     }
 
-    printk(" Payload: ");
-    unsigned char *pl = (unsigned char *)(
-            skb->data + ip_hdrlen(skb) + tcp_hdrlen(skb)
-        );
+//     printk(" Payload: ");
+//     unsigned char *pl = (unsigned char *)(
+//             skb->data + ip_hdrlen(skb) + tcp_hdrlen(skb)
+//         );
 
-    for (i = 0 ; i < skb->len - ip_hdrlen(skb) - tcp_hdrlen(skb); ++i) {
-        printk("%x", *(pl + i));
-    }
-}
+//     for (i = 0 ; i < skb->len - ip_hdrlen(skb) - tcp_hdrlen(skb); ++i) {
+//         printk("%x", *(pl + i));
+//     }
+// }
 
 
 void restore_pl(unsigned char *pl,
@@ -57,67 +57,69 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
                       const struct net_device *out,
                       int (*okfn)(struct sk_buff *))
 {
-    struct iphdr *iph = ip_hdr(skb);
+    if (skb->protocol == htons(ETH_P_IP)) {
+        struct iphdr *iph = ip_hdr(skb);
 
-    if (ntohl(iph->saddr) >> 24 == trg_ip[0] &&
-        ((ntohl(iph->saddr) >> 16) & 0x00FF) == trg_ip[1] &&
-        ((ntohl(iph->saddr) >> 8) & 0x0000FF) == trg_ip[2] &&
-        ((ntohl(iph->saddr)) & 0x000000FF) == trg_ip[3])
-    {
-        if (iph->protocol == IPPROTO_TCP &&
-            ntohs(tcp_hdr(skb)->dest) == trg_port)
-        {
-            unsigned int pl_len = skb->len - ip_hdrlen(skb) - tcp_hdrlen(skb);
-            unsigned char *pl = (unsigned char *)(
-                    skb->data + ip_hdrlen(skb) + tcp_hdrlen(skb)
-                );
+        // if (ntohl(iph->saddr) >> 24 == trg_ip[0] &&
+        //     ((ntohl(iph->saddr) >> 16) & 0x00FF) == trg_ip[1] &&
+        //     ((ntohl(iph->saddr) >> 8) & 0x0000FF) == trg_ip[2] &&
+        //     ((ntohl(iph->saddr)) & 0x000000FF) == trg_ip[3])
+        // {
+            // if (iph->protocol == IPPROTO_TCP &&
+            //     ntohs(tcp_hdr(skb)->dest) == trg_port)
+            if (iph->protocol == IPPROTO_TCP) {
+                unsigned int pl_len = skb->len - ip_hdrlen(skb) - tcp_hdrlen(skb);
+                unsigned char *pl = (unsigned char *)(
+                        skb->data + ip_hdrlen(skb) + tcp_hdrlen(skb)
+                    );
 
-            printk("%sBefore. ", module_header);
-            print_pkt(skb);
-            printk("\n");
+                // printk("%sBefore. ", module_header);
+                // print_pkt(skb);
+                // printk("\n");
 
-            if (pl_len > HASH_LEN) {
-                add_to_cache(c, pl, pl_len);
-            } else
-            if (pl_len == HASH_LEN) {
-                if (tcp_is_hashed(tcp_hdr(skb))) {
-                    unsigned char *cached_pl;
-                    int cached_pl_len;
-                    get_pl_info(c, pl, &cached_pl, &cached_pl_len);
+                if (pl_len > HASH_LEN) {
+                    add_to_cache(c, pl, pl_len);
+                } else
+                if (pl_len == HASH_LEN) {
+                    if (tcp_is_hashed(tcp_hdr(skb))) {
+                        unsigned char *cached_pl;
+                        int cached_pl_len;
+                        get_pl_info(c, pl, &cached_pl, &cached_pl_len);
 
-                    if (cached_pl != NULL) {
-                        unsigned int d = cached_pl_len - pl_len;
+                        if (cached_pl != NULL) {
+                            unsigned int d = cached_pl_len - pl_len;
 
-                        if (!pskb_expand_head(skb, 0, d, GFP_KERNEL)) {
-                            skb_put(skb, d);
-                            struct tcphdr *tcph = tcp_hdr(skb);
-                            iph = ip_hdr(skb);
+                            if (!pskb_expand_head(skb, 0, d, GFP_KERNEL)) {
+                                skb_put(skb, d);
+                                struct tcphdr *tcph = tcp_hdr(skb);
+                                iph = ip_hdr(skb);
 
-                            iph->tot_len = htons((unsigned short)skb->len);
+                                iph->tot_len = htons((unsigned short)skb->len);
 
-                            pl = (unsigned char *)(
-                                    skb->data + ip_hdrlen(skb) + tcp_hdrlen(skb)
-                                );
-                            restore_pl(pl, cached_pl, cached_pl_len);
+                                pl = (unsigned char *)(
+                                        skb->data + ip_hdrlen(skb) + tcp_hdrlen(skb)
+                                    );
+                                restore_pl(pl, cached_pl, cached_pl_len);
 
-                            tcph->check = htons(0);
-                            int len = skb->len - ip_hdrlen(skb);
-                            tcph->check = tcp_v4_check(len, iph->saddr, iph->daddr,
-                                                       csum_partial((char*)tcph,
-                                                       len, 0));
+                                tcph->check = htons(0);
+                                int len = skb->len - ip_hdrlen(skb);
+                                tcph->check = tcp_v4_check(len, iph->saddr, iph->daddr,
+                                                           csum_partial((char*)tcph,
+                                                           len, 0));
 
-                            iph->check = htons(0);
-                            iph->check = ip_fast_csum((unsigned char *)iph,
-                                                      iph->ihl);
+                                iph->check = htons(0);
+                                iph->check = ip_fast_csum((unsigned char *)iph,
+                                                          iph->ihl);
 
-                            printk("%sAfter restoring. ", module_header);
-                            print_pkt(skb);
-                            printk("\n");
+                                // printk("%sAfter restoring. ", module_header);
+                                // print_pkt(skb);
+                                // printk("\n");
+                            }
                         }
                     }
                 }
             }
-        }
+        // }
     }
 
     return NF_ACCEPT;
@@ -144,6 +146,10 @@ int init_func(void) {
 
 
 void exit_func(void) {
+    printk("%sTotal hitrate: %d\n", module_header, get_hitrate(c));
+    printk("%sSaved traffic part: %d\n", module_header,
+           get_saved_traffic_part(c));
+
     clean_cache(c);
     kfree(c);
     free_hash_structs();

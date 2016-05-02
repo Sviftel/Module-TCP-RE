@@ -134,6 +134,8 @@ unsigned char *add_to_cache(struct cache *c, unsigned char *pl, int s) {
             __tree_remove(&(c->tree), curr_rb_entry);
             __tree_insert(&(c->tree), curr_rb_entry);
             c->hits++;
+            c->saved_traffic_size += s;
+            c->total_traffic_size += s;
             return curr_rb_entry->data.hash;
         }
     }
@@ -158,6 +160,7 @@ unsigned char *add_to_cache(struct cache *c, unsigned char *pl, int s) {
 
     c->curr_size += s;
     c->misses++;
+    c->total_traffic_size += s;
 
     return NULL;
 }
@@ -187,6 +190,8 @@ void init_cache(struct cache *c, int cache_size) {
     c->curr_size = 0;
     c->hits = 0;
     c->misses = 0;
+    c->saved_traffic_size = 0;
+    c->total_traffic_size = 0;
 
     c->tree = RB_ROOT;
     hash_init(c->ht);
@@ -217,6 +222,7 @@ void get_pl_info(struct cache *c, unsigned char *hash_val,
             __tree_remove(&(c->tree), curr_rb_entry);
             __tree_insert(&(c->tree), curr_rb_entry);
             c->hits++;
+            c->saved_traffic_size += curr_rb_entry->data.size;
 
             *pl = curr_rb_entry->data.pl;
             *pl_s = curr_rb_entry->data.size;
@@ -230,8 +236,15 @@ void get_pl_info(struct cache *c, unsigned char *hash_val,
 
 
 int get_hitrate(struct cache *c) {
-    if (c->misses != 0)
-        return 100 * c->hits / (c->hits + c->misses);
+    if (c->misses == 0)
+        return 0;
 
-    return 0;
+    return 100 * c->hits / (c->hits + c->misses);
+}
+
+int get_saved_traffic_part(struct cache *c) {
+    if (c->total_traffic_size == 0)
+        return 0;
+
+    return 100 * c->saved_traffic_size / c->total_traffic_size;
 }

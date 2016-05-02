@@ -19,6 +19,8 @@ struct cache {
     long curr_size;     // in bytes
     int hits;
     int misses;
+    long long saved_traffic_size;
+    long long total_traffic_size;
 };
 
 // cache_size in MB
@@ -33,6 +35,6 @@ void get_pl_info(struct cache *c, unsigned char *hash_val,
                  unsigned char **pl, int *pl_s);
 
 int get_hitrate(struct cache *c);
-
+int get_saved_traffic_part(struct cache *c);
 
 #endif

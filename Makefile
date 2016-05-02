@@ -30,7 +30,8 @@ clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 
 deploy: all
-	cp low_m.ko ~/sshfsdir/
+	cp low_m.ko ~/sshfsdir/Coding/
+	cp -r ./scripts/capturing_scripts ~/sshfsdir/Coding/
 
 cache_test:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
