@@ -7,18 +7,12 @@
 #define MOD 65287
 
 
-// TODO: add fields to join structures
 // TODO: add timestamp fields
-struct rbtree_entry {
+struct data_entry {
     int cnt;
     struct hpl_entry data;
-    struct rb_node node;
-};
-
-
-struct ht_entry {
-    struct rbtree_entry *rb_entry;
-    struct hlist_node node;
+    struct rb_node t_node;
+    struct hlist_node ht_node;
 };
 
 
@@ -44,12 +38,12 @@ void __get_hash_key_to_buff(unsigned char *pl, int s,
 }
 
 
-int __tree_insert(struct rb_root *root, struct rbtree_entry *entry) {
+int __tree_insert(struct rb_root *root, struct data_entry *entry) {
     struct rb_node **new = &(root->rb_node), *parent = NULL;
 
     while (*new) {
-        struct rbtree_entry *curr_entry;
-        curr_entry = container_of(*new, struct rbtree_entry, node);
+        struct data_entry *curr_entry;
+        curr_entry = container_of(*new, struct data_entry, t_node);
 
         parent = *new;
         if (entry->cnt <= curr_entry->cnt)
@@ -58,18 +52,20 @@ int __tree_insert(struct rb_root *root, struct rbtree_entry *entry) {
             new = &((*new)->rb_right);
     }
 
-    rb_link_node(&(entry->node), parent, new);
-    rb_insert_color(&(entry->node), root);
+    rb_link_node(&(entry->t_node), parent, new);
+    rb_insert_color(&(entry->t_node), root);
 
     return 1;
 }
 
 
-void __tree_remove(struct rb_root *tree, struct rbtree_entry *rb_entry) {
-    rb_erase(&(rb_entry->node), tree);
+void __tree_remove(struct rb_root *tree, struct data_entry *entry) {
+    rb_erase(&(entry->t_node), tree);
 }
 
 
+// function also frees entry, should be
+// called after __ht_clean()
 void __tree_rec_clean(struct rb_node *node) {
     if (node == NULL)
         return;
@@ -79,38 +75,36 @@ void __tree_rec_clean(struct rb_node *node) {
     node->rb_left = NULL;
     node->rb_right = NULL;
 
-    struct rbtree_entry *entry;
-    entry = container_of(node, struct rbtree_entry, node);
+    struct data_entry *entry;
+    entry = container_of(node, struct data_entry, t_node);
     free_hpl_entry(&(entry->data));
     kfree(entry);
     node = NULL;
 }
 
 
-void __remove_entry_from_cache(struct cache *c) {
-    struct rb_node *node_to_rm = rb_first(&(c->tree));
-    struct rbtree_entry *rb_entry_to_rm;
-    rb_entry_to_rm = container_of(node_to_rm, struct rbtree_entry, node);
+void __ht_clean(struct cache *c) {
+    int k;
 
-    int k = __get_key_from_hash(rb_entry_to_rm->data.hash);
-    struct ht_entry *curr_ht_entry;
-    struct rbtree_entry *curr_rb_entry;
-    hash_for_each_possible(c->ht, curr_ht_entry, node, k) {
-        curr_rb_entry = curr_ht_entry->rb_entry;
-
-        if (eq_hpl_entries(&(curr_rb_entry->data), &(rb_entry_to_rm->data)))
-        {
-            __tree_remove(&(c->tree), rb_entry_to_rm);
-            hash_del(&(curr_ht_entry->node));
-            c->curr_size -= rb_entry_to_rm->data.size;
-
-            free_hpl_entry(&(rb_entry_to_rm->data));
-            kfree(rb_entry_to_rm);
-            kfree(curr_ht_entry);
-            return;
-        }
+    for (k = 0; k < 1 << CACHE_BITS_NUM; ++k) {
+        c->ht[k].first = NULL;
     }
 }
+
+
+void __remove_entry_from_cache(struct cache *c) {
+    struct rb_node *node_to_rm = rb_first(&(c->tree));
+    struct data_entry *entry_to_rm;
+    entry_to_rm = container_of(node_to_rm, struct data_entry, t_node);
+
+    __tree_remove(&(c->tree), entry_to_rm);
+    hash_del(&(entry_to_rm->ht_node));
+    c->curr_size -= entry_to_rm->data.size;
+
+    free_hpl_entry(&(entry_to_rm->data));
+    kfree(entry_to_rm);
+}
+
 
 // TODO: add lists to solve collisions
 unsigned char *add_to_cache(struct cache *c, unsigned char *pl, int s) {
@@ -121,22 +115,18 @@ unsigned char *add_to_cache(struct cache *c, unsigned char *pl, int s) {
     new_hpl_entry.size = s;
     __get_hash_key_to_buff(pl, s, new_hpl_entry.hash, &k);
 
-    struct ht_entry *curr_ht_entry;
-    struct rbtree_entry *curr_rb_entry;
+    struct data_entry *curr_entry;
 
-    hash_for_each_possible(c->ht, curr_ht_entry, node, k) {
-        curr_rb_entry = curr_ht_entry->rb_entry;
-
-        if (curr_rb_entry != NULL &&
-            eq_hpl_entries(&(curr_rb_entry->data), &new_hpl_entry))
+    hash_for_each_possible(c->ht, curr_entry, ht_node, k) {
+        if (eq_hpl_entries(&(curr_entry->data), &new_hpl_entry))
         {
-            curr_rb_entry->cnt += 1;
-            __tree_remove(&(c->tree), curr_rb_entry);
-            __tree_insert(&(c->tree), curr_rb_entry);
+            curr_entry->cnt += 1;
+            __tree_remove(&(c->tree), curr_entry);
+            __tree_insert(&(c->tree), curr_entry);
             c->hits++;
             c->saved_traffic_size += s;
             c->total_traffic_size += s;
-            return curr_rb_entry->data.hash;
+            return curr_entry->data.hash;
         }
     }
 
@@ -144,44 +134,21 @@ unsigned char *add_to_cache(struct cache *c, unsigned char *pl, int s) {
         __remove_entry_from_cache(c);
     }
 
-    struct rbtree_entry *new_rb_entry;
-    new_rb_entry = kmalloc(sizeof(struct rbtree_entry), GFP_KERNEL);
+    struct data_entry *new_entry;
+    new_entry = kmalloc(sizeof(struct data_entry), GFP_KERNEL);
 
-    new_rb_entry->cnt = 1;
-    fill_hpl_entry(&(new_rb_entry->data), pl, s);
-    __tree_insert(&(c->tree), new_rb_entry);
+    new_entry->cnt = 1;
+    fill_hpl_entry(&(new_entry->data), pl, s);
 
-    struct ht_entry *new_ht_entry;
-    new_ht_entry = kmalloc(sizeof(struct ht_entry), GFP_KERNEL);
-    new_ht_entry->rb_entry = new_rb_entry;
-    INIT_HLIST_NODE(&(new_ht_entry->node));
-    // TODO: think about &(c->ht[0]) to do similar with &(c->tree)
-    hash_add(c->ht, &(new_ht_entry->node), k);
+    __tree_insert(&(c->tree), new_entry);
+    INIT_HLIST_NODE(&(new_entry->ht_node));
+    hash_add(c->ht, &(new_entry->ht_node), k);
 
     c->curr_size += s;
     c->misses++;
     c->total_traffic_size += s;
 
     return NULL;
-}
-
-
-void __ht_clean(struct cache *c) {
-    int k;
-    struct ht_entry *curr_ht_entry;
-    struct hlist_node *curr_node;
-
-    for (k = 0; k < 1 << CACHE_BITS_NUM; ++k) {
-        curr_node = c->ht[k].first;
-
-        while (curr_node != NULL) {
-            curr_ht_entry = container_of(curr_node, struct ht_entry, node);
-            curr_node = curr_node->next;
-            kfree(curr_ht_entry);
-        }
-
-        c->ht[k].first = NULL;
-    }
 }
 
 
@@ -199,9 +166,9 @@ void init_cache(struct cache *c, int cache_size) {
 
 
 void clean_cache(struct cache *c) {
+    __ht_clean(c);
     __tree_rec_clean(c->tree.rb_node);
     c->tree.rb_node = NULL;
-    __ht_clean(c);
     c->curr_size = 0;
 }
 
@@ -211,21 +178,18 @@ void get_pl_info(struct cache *c, unsigned char *hash_val,
 {
     int k = __get_key_from_hash(hash_val);
 
-    struct ht_entry *curr_ht_entry;
-    struct rbtree_entry *curr_rb_entry;
-    hash_for_each_possible(c->ht, curr_ht_entry, node, k) {
-        curr_rb_entry = curr_ht_entry->rb_entry;
-
-        if (eq_hash_vals(hash_val, curr_rb_entry->data.hash))
+    struct data_entry *curr_entry;
+    hash_for_each_possible(c->ht, curr_entry, ht_node, k) {
+        if (eq_hash_vals(hash_val, curr_entry->data.hash))
         {
-            curr_rb_entry->cnt += 1;
-            __tree_remove(&(c->tree), curr_rb_entry);
-            __tree_insert(&(c->tree), curr_rb_entry);
+            curr_entry->cnt += 1;
+            __tree_remove(&(c->tree), curr_entry);
+            __tree_insert(&(c->tree), curr_entry);
             c->hits++;
-            c->saved_traffic_size += curr_rb_entry->data.size;
+            c->saved_traffic_size += curr_entry->data.size;
 
-            *pl = curr_rb_entry->data.pl;
-            *pl_s = curr_rb_entry->data.size;
+            *pl = curr_entry->data.pl;
+            *pl_s = curr_entry->data.size;
             return;
         }
     }

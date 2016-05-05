@@ -15,10 +15,12 @@ struct cache *c;
 
 /************/
 
-struct rbtree_entry {
+
+struct data_entry {
     int cnt;
     struct hpl_entry data;
-    struct rb_node node;
+    struct rb_node t_node;
+    struct hlist_node ht_node;
 };
 
 
@@ -26,8 +28,8 @@ void tree_print(struct rb_root *root) {
     struct rb_node *node;
     for (node = rb_first(root); node; node = rb_next(node)) {
         int i;
-        struct rbtree_entry *entry;
-        entry = container_of(node, struct rbtree_entry, node);
+        struct data_entry *entry;
+        entry = container_of(node, struct data_entry, t_node);
 
         printk("%sPayload: ", module_header);
         for (i = 0; i < entry->data.size; ++i) {
@@ -45,30 +47,23 @@ void tree_print(struct rb_root *root) {
 }
 
 
-struct ht_entry {
-    struct rbtree_entry *rb_entry;
-    struct hlist_node node;
-};
-
 void cache_ht_print(struct cache *c) {
-    struct ht_entry *curr_ht_entry;
-    struct rbtree_entry *curr_rb_entry;
+    struct data_entry *curr_entry;
     int i, k;
 
     for (k = 0; k < 1 << CACHE_BITS_NUM; ++k) {
-        hash_for_each_possible(c->ht, curr_ht_entry, node, k) {
-            curr_rb_entry = curr_ht_entry->rb_entry;
+        hash_for_each_possible(c->ht, curr_entry, ht_node, k) {
 
             printk("%sPayload: ", module_header);
-            for (i = 0; i < curr_rb_entry->data.size; ++i) {
-                printk("%c", curr_rb_entry->data.pl[i]);
+            for (i = 0; i < curr_entry->data.size; ++i) {
+                printk("%c", curr_entry->data.pl[i]);
             }
 
-            printk(" Freq: %d ", curr_rb_entry->cnt);
+            printk(" Freq: %d ", curr_entry->cnt);
 
             printk(" Hash: ");
             for (i = 0; i < 16; ++i) {
-                printk("\\x%x", curr_rb_entry->data.hash[i]);
+                printk("\\x%x", curr_entry->data.hash[i]);
             }
             printk("\n");
         }
@@ -112,12 +107,17 @@ int init_func(void) {
         for (j = 0; j < s; ++j) {
             printk("%c", pl[j]);
         }
+
+        printk(", should be: ");
+        for (j = 0; j < msg_len; j++) {
+            printk("%c", words[i][j]);
+        }
         printk("\n");
     }
 
 
     // printk("%sPrint from tree:\n", module_header);
-    tree_print(&(c->tree));
+    // tree_print(&(c->tree));
 
     // printk("%sPrint from hash table:\n", module_header);
     // cache_ht_print(c);
