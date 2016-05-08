@@ -5,6 +5,7 @@
 #include "hashing.h"
 
 #include "hpl_entry.h"
+#include "test_consts.h"
 
 MODULE_LICENSE("GPL");
 
@@ -15,12 +16,23 @@ struct cache *c;
 
 /************/
 
+struct ht_entry {
+    unsigned char hash[HASH_LEN];
+    unsigned char packets_num;
+    // HLIST_HEAD(packets_list);
+    struct hlist_head packets_list;
+    struct hlist_node ht_node;
+};
+
 
 struct data_entry {
     int cnt;
     struct hpl_entry data;
-    struct rb_node t_node;
-    struct hlist_node ht_node;
+    struct rb_node tree_node;
+
+    struct hlist_node list_node;
+    struct ht_entry *same_hash_packets;
+    unsigned char id;
 };
 
 
@@ -29,11 +41,11 @@ void tree_print(struct rb_root *root) {
     for (node = rb_first(root); node; node = rb_next(node)) {
         int i;
         struct data_entry *entry;
-        entry = container_of(node, struct data_entry, t_node);
+        entry = container_of(node, struct data_entry, tree_node);
 
         printk("%sPayload: ", module_header);
         for (i = 0; i < entry->data.size; ++i) {
-            printk("%c", entry->data.pl[i]);
+            printk("%x", entry->data.pl[i]);
         }
 
         printk(" Freq: %d ", entry->cnt);
@@ -42,30 +54,41 @@ void tree_print(struct rb_root *root) {
         for (i = 0; i < 16; ++i) {
             printk("\\x%x", entry->data.hash[i]);
         }
+        printk(" ID: %d", entry->id);
         printk("\n");
     }
 }
 
 
 void cache_ht_print(struct cache *c) {
-    struct data_entry *curr_entry;
+    struct ht_entry *same_hash_set;
     int i, k;
 
     for (k = 0; k < 1 << CACHE_BITS_NUM; ++k) {
-        hash_for_each_possible(c->ht, curr_entry, ht_node, k) {
+        hash_for_each_possible(c->ht, same_hash_set, ht_node, k) {
+            struct data_entry *same_hash_packet;
 
-            printk("%sPayload: ", module_header);
-            for (i = 0; i < curr_entry->data.size; ++i) {
-                printk("%c", curr_entry->data.pl[i]);
-            }
-
-            printk(" Freq: %d ", curr_entry->cnt);
-
-            printk(" Hash: ");
+            printk("%sNext same_hash_set, hash : ", module_header);
             for (i = 0; i < 16; ++i) {
-                printk("\\x%x", curr_entry->data.hash[i]);
+                printk("\\x%x", same_hash_set->hash[i]);
             }
-            printk("\n");
+            printk(" # packets: %d\n", same_hash_set->packets_num);
+
+
+            hlist_for_each_entry(same_hash_packet,
+                                 &(same_hash_set->packets_list),
+                                 list_node)
+            {
+                printk("%sPayload: ", module_header);
+                for (i = 0; i < same_hash_packet->data.size; ++i) {
+                    printk("%x", same_hash_packet->data.pl[i]);
+                }
+
+                printk(" Freq: %d ", same_hash_packet->cnt);
+
+                printk(" ID: %d", same_hash_packet->id);
+                printk("\n");
+            }
         }
     }
 }
@@ -74,15 +97,81 @@ void cache_ht_print(struct cache *c) {
 /************/
 
 
-int init_func(void) {
-    printk("%sStart working with cache\n", module_header);
+int bytes_check(const unsigned char *msg, int msg_len,
+                const unsigned char *pl, int pl_len, int step_num)
+{
+    int i;
+    if (pl_len != msg_len) {
+        printk("%sStep %d, Wrong lengths\n", module_header, step_num);
+        return 0;
+    }
+    for (i = 0; i < pl_len; ++i) {
+        if (pl[i] != msg[i]) {
+            printk("%sStep %d, Wrong symbol %d: %x != %x \n",
+                   module_header, step_num, i, pl[i], msg[i]);
+            return 0;
+        }
+    }
+    return 1;
+}
 
-    c = kmalloc(sizeof(struct cache), GFP_KERNEL);
+
+void test_collisions(void) {
     init_cache(c, 256);
+    int i, pl_len;
+    unsigned char *_hval, _id, *pl, h1[HASH_LEN], h2[HASH_LEN];
+    printk("%sTest collisions\n", module_header);
+
+    add_to_cache(c, m1, M1_LEN, &_hval, &_id);
+    add_to_cache(c, m2, M2_LEN, &_hval, &_id);
+
+    calc_hash(m1, M1_LEN, h1);
+    calc_hash(m2, M2_LEN, h2);
+
+    for (i = 0; i < HASH_LEN; ++i) {
+        if (h1[i] != h2[i]) {
+            printk("%sHashes are different at %d: %x != %x\n",
+                   module_header, i, h1[i], h2[i]);
+            return;
+        }
+    }
+
+    get_pl_info(c, h1, 0, &pl, &pl_len);
+    if (bytes_check(m1, M1_LEN, pl, pl_len, 0)) {
+        printk("%sStep %d - ok\n", module_header, 0);
+    }
+    get_pl_info(c, h2, 1, &pl, &pl_len);
+    if (bytes_check(m2, M2_LEN, pl, pl_len, 1)) {
+        printk("%sStep %d - ok\n", module_header, 1);
+    }
+
+    add_to_cache(c, m2, M2_LEN, &_hval, &_id);
+    add_to_cache(c, m2, M2_LEN, &_hval, &_id);
+    __cache_del_entry(c);
+
+    struct rb_node *node = rb_first(&(c->tree));
+    struct data_entry *entry;
+    entry = container_of(node, struct data_entry, tree_node);
+    if (entry->id != 0) {
+        printk("%sID haven't been changed!\n", module_header);
+    } else {
+        printk("%sStep %d - ok\n", module_header, 2);
+    }
+
+    if (entry->cnt != 4) {
+        printk("%sPacket freq is wrong!\n", module_header);
+    } else {
+        printk("%sStep %d - ok\n", module_header, 3);
+    }
+
+    clean_cache(c);
+}
+
+
+void test_basic_functionality(void) {
+    init_cache(c, 256);
+
     int i, j, entries_num = 3, msg_len = 5;
-
-    alloc_hash_structs();
-
     unsigned char words[entries_num][msg_len];
     unsigned char ch = 'a';
     for (i = 0; i < entries_num; ++i) {
@@ -91,46 +180,64 @@ int init_func(void) {
         }
 
         for (j = 0; j < entries_num - i; ++j) {
-            add_to_cache(c, words[i], msg_len);
+            unsigned char *_hval, _id;
+            add_to_cache(c, words[i], msg_len, &_hval, &_id);
         }
     }
 
     printk("%sTest getting payload from cache:\n", module_header);
     for (i = 0; i < entries_num; ++i) {
-        printk("%sNext payload: ", module_header);
+        // printk("%sNext payload: ", module_header);
         unsigned char *pl, h[HASH_LEN];
-        int s, _k;
+        int s;
 
         calc_hash(words[i], msg_len, h);
-        get_pl_info(c, h, &pl, &s);
+        get_pl_info(c, h, 0, &pl, &s);
+
+        if (s != msg_len) {
+            printk("%sWrong message len at %d word!",
+                   module_header, i);
+            return;
+        }
 
         for (j = 0; j < s; ++j) {
-            printk("%c", pl[j]);
+            if (pl[j] != words[i][j]) {
+                printk("%sWrong symbol at pos %d, word %d: %x != %x!",
+                    module_header, j, i, pl[j], words[i][j]);
+                return;
+            }
         }
-
-        printk(", should be: ");
-        for (j = 0; j < msg_len; j++) {
-            printk("%c", words[i][j]);
-        }
-        printk("\n");
+        printk("%sWord %d - ok\n", module_header, i);
     }
 
+    // printk("%sSize, in bytes: %ld, Hitrate: %d\n",
+    //        module_header, c->curr_size, get_hitrate(c));
 
-    // printk("%sPrint from tree:\n", module_header);
-    // tree_print(&(c->tree));
+    if (get_hitrate(c) != 66) {
+        printk("%sWrong hitrate!", module_header);
+    } else {
+        printk("%sStep %d - ok\n", module_header, 0);
+    }
 
-    // printk("%sPrint from hash table:\n", module_header);
-    // cache_ht_print(c);
+    clean_cache(c);
+}
 
-    printk("%sSize, in bytes: %ld, Hitrate: %d\n",
-           module_header, c->curr_size, get_hitrate(c));
+
+int init_func(void) {
+    printk("%sStart working with cache\n", module_header);
+
+    c = kmalloc(sizeof(struct cache), GFP_KERNEL);
+    alloc_hash_structs();
+
+    test_basic_functionality();
+
+    test_collisions();
 
     return 0;
 }
 
 
 void exit_func(void) {
-    clean_cache(c);
     kfree(c);
 
     free_hash_structs();

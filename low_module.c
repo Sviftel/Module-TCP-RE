@@ -77,14 +77,16 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
                 // print_pkt(skb);
                 // printk("\n");
 
-                if (pl_len > HASH_LEN) {
-                    add_to_cache(c, pl, pl_len);
+                if (pl_len > TOTAL_HASH_INFO_LEN) {
+                    unsigned char *hash_val, id;
+                    add_to_cache(c, pl, pl_len, &hash_val, &id);
                 } else
-                if (pl_len == HASH_LEN) {
+                if (pl_len == TOTAL_HASH_INFO_LEN) {
                     if (tcp_is_hashed(tcp_hdr(skb))) {
                         unsigned char *cached_pl;
                         int cached_pl_len;
-                        get_pl_info(c, pl, &cached_pl, &cached_pl_len);
+                        unsigned char id = pl[HASH_LEN];
+                        get_pl_info(c, pl, id, &cached_pl, &cached_pl_len);
 
                         if (cached_pl != NULL) {
                             unsigned int d = cached_pl_len - pl_len;

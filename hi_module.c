@@ -21,8 +21,11 @@ long trg_ip[] = {192, 168, 56, 101};
 struct cache *c;
 
 
-void fill_pl(unsigned char *pl, const unsigned char *hash_val) {
+void fill_pl(unsigned char *pl,
+             const unsigned char *hash_val,
+             unsigned char id) {
     memcpy(pl, hash_val, HASH_LEN);
+    memcpy(pl + HASH_LEN, &id, ID_LEN);
 }
 
 
@@ -76,11 +79,12 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
                 // print_pkt(skb);
                 // printk("\n");
 
-                if (pl_len > HASH_LEN) {
-                    unsigned char *hash_val = add_to_cache(c, pl, pl_len);
+                if (pl_len > TOTAL_HASH_INFO_LEN) {
+                    unsigned char *hash_val, id;
+                    add_to_cache(c, pl, pl_len, &hash_val, &id);
 
                     if (hash_val != NULL) {
-                        unsigned int d = HASH_LEN;
+                        unsigned int d = TOTAL_HASH_INFO_LEN;
                         skb_trim(skb, ip_hdrlen(skb) + tcp_hdrlen(skb) + d);
                         struct tcphdr *tcph = tcp_hdr(skb);
                         iph = ip_hdr(skb);
@@ -90,7 +94,7 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
 
                         iph->tot_len = htons((unsigned short)skb->len);
                         pl_len = d;
-                        fill_pl(pl, hash_val);
+                        fill_pl(pl, hash_val, id);
                         adjust_tcp_res_bits(tcp_hdr(skb), IS_HASHED);
 
 
@@ -106,7 +110,7 @@ unsigned int hook_func(const struct nf_hook_ops *ops,
                         // print_pkt(skb);
                         // printk("\n");
                     }
-                } else if (pl_len == HASH_LEN) {
+                } else if (pl_len == TOTAL_HASH_INFO_LEN) {
                     adjust_tcp_res_bits(tcp_hdr(skb), NOT_HASHED);
 
                     struct tcphdr *tcph = tcp_hdr(skb);

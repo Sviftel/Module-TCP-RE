@@ -15,11 +15,7 @@ struct hpl_entry {
 };
 
 
-struct hpl_entry* create_hpl_entry(const unsigned char *pl, int s);
-
-void fill_hpl_entry(struct hpl_entry *entry,
-                    const unsigned char *pl,
-                    int s);
+int copy_hpl_entry(struct hpl_entry* dst, const struct hpl_entry* src);
 
 int eq_hpl_entries(const struct hpl_entry* e1, const struct hpl_entry* e2);
 

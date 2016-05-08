@@ -31,6 +31,7 @@ clean:
 
 deploy: all
 	cp low_m.ko ~/sshfsdir/Coding/
+	cp cache_test_m.ko ~/sshfsdir/Coding/
 	cp -r ./scripts/capturing_scripts ~/sshfsdir/Coding/
 
 cache_test:

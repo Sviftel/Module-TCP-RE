@@ -11,6 +11,9 @@
 // function if you are changing size of hash_table
 #define CACHE_BITS_NUM 16
 
+#define ID_LEN 1
+#define TOTAL_HASH_INFO_LEN (HASH_LEN + ID_LEN)
+
 
 struct cache {
     struct rb_root tree;
@@ -27,12 +30,22 @@ struct cache {
 void init_cache(struct cache *c, int cache_size);
 void clean_cache(struct cache *c);
 
-// function returns pointer to array with hash value
-unsigned char *add_to_cache(struct cache *c, unsigned char *pl, int s);
+// function returns non-nil hash value and ID 
+// if payload is already stored in the cache
+void add_to_cache(struct cache *c,
+                  const unsigned char *pl,
+                  int s,
+                  unsigned char **hash_val,
+                  unsigned char *id);
 
-// function updates freq key of the payload
-void get_pl_info(struct cache *c, unsigned char *hash_val,
-                 unsigned char **pl, int *pl_s);
+// function updates keys of the payload
+void get_pl_info(struct cache *c,
+                 const unsigned char *hash_val,
+                 unsigned char id,
+                 unsigned char **pl,
+                 int *pl_s);
+
+void __cache_del_entry(struct cache *c);
 
 int get_hitrate(struct cache *c);
 int get_saved_traffic_part(struct cache *c);

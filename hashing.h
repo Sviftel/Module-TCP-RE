@@ -6,7 +6,7 @@
 
 void alloc_hash_structs(void);
 
-void calc_hash(unsigned char *buf,
+void calc_hash(const unsigned char *buf,
                unsigned int buf_len,
                unsigned char *output);
 

@@ -4,7 +4,6 @@
 #include <linux/scatterlist.h>
 
 
-struct scatterlist sg;
 struct crypto_hash *tfm;
 struct hash_desc desc;
 
@@ -17,11 +16,12 @@ void alloc_hash_structs(void) {
 }
 
 
-void calc_hash(unsigned char *buf,
+void calc_hash(const unsigned char *buf,
                unsigned int buf_len,
                unsigned char *output)
 {
     crypto_hash_init(&desc);
+    struct scatterlist sg;
     sg_init_one(&sg, buf, buf_len);
     crypto_hash_update(&desc, &sg, buf_len);
     crypto_hash_final(&desc, output);
